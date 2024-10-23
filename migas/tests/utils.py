@@ -1,3 +1,6 @@
+import os
+
+
 def _check_server_available() -> bool:
     """Checks if the server is locally available."""
     import requests
@@ -12,4 +15,4 @@ def _check_server_available() -> bool:
         return False
     return True
 
-do_server_tests = _check_server_available()
+run_server_tests = _check_server_available() and os.getenv('MIGAS_FRESH_DB')

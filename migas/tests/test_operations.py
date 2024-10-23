@@ -1,23 +1,21 @@
 from datetime import datetime as dt
 from datetime import timedelta
 from datetime import timezone as tz
-import time
 
 from looseversion import LooseVersion
 import pytest
 
-from migas import __version__
+import migas
 from migas.operations import (
     add_breadcrumb,
-    add_project,
     check_project,
     get_usage,
 )
 
-from .utils import do_server_tests
+from .utils import run_server_tests
 
 # skip all tests in module if server is not available
-pytestmark = pytest.mark.skipif(not do_server_tests, reason="Local server not found")
+pytestmark = pytest.mark.skipif(not run_server_tests, reason="Local server not found")
 
 test_project = 'nipreps/migas-py'
 today = dt.now(tz.utc)
@@ -25,34 +23,39 @@ future = (today + timedelta(days=2)).strftime('%Y-%m-%d')
 today = today.strftime('%Y-%m-%d')
 
 
-def test_operations(setup_migas):
-    _test_add_breakcrumb()
-    # add delay to ensure server has updated
-    time.sleep(2)
-    _test_get_usage()
+TEST_ROOT = "http://localhost:8080/"
+TEST_ENDPOINT = f"{TEST_ROOT}graphql"
 
-def _test_add_breakcrumb():
-    res = add_breadcrumb(test_project, __version__)
-    assert res['success'] is True
 
+
+@pytest.fixture(autouse=True, scope='module')
+def setup_migas():
+    """Ensure migas is configured to communicate with the staging app."""
+    migas.setup(endpoint=TEST_ENDPOINT)
+
+    assert migas.config.Config._is_setup
+    return migas.config.Config._is_setup
+
+
+
+def test_migas_add_get():
+    res = add_breadcrumb(test_project, migas.__version__)
     # ensure kwargs can be submitted
-    res = add_breadcrumb(test_project, __version__, language='cpython', platform='win32')
+    res = add_breadcrumb(test_project, migas.__version__, wait=True, language='cpython', platform='win32')
     assert res['success'] is True
-
-    # validation should happen instantly
-    res = add_breadcrumb(test_project, __version__, status='wtf')
+    # this breadcrumb is not valid, so won't be tracked
+    res = add_breadcrumb(test_project, migas.__version__, wait=True, status='wtf')
     assert res['success'] is False
 
-def _test_get_usage():
-    """This test requires `_test_add_breadcrumb()` to be run before."""
+    # 2 crumbs should be present on the server, both from the same user
     res = get_usage(test_project, start=today)
     assert res['success'] is True
     all_usage = res['hits']
-    assert all_usage > 0
+    assert all_usage == 2
 
     res = get_usage(test_project, start=today, unique=True)
     assert res['success'] is True
-    assert all_usage >= res['hits'] > 0
+    assert all_usage > res['hits'] > 0
 
     res = get_usage(test_project, start=future)
     assert res['success'] is True
@@ -64,30 +67,11 @@ def _test_get_usage():
     assert res['hits'] == 0
 
 
-def test_add_project(setup_migas):
-    res = add_project(test_project, __version__)
-    assert res['success'] is True
-    latest = res['latest_version']
-    assert latest
-
-    # ensure kwargs can be submitted
-    res = add_project(test_project, __version__, language='cpython', platform='win32')
-    assert res['success'] is True
-    assert res['latest_version'] == latest
-    # should be cached since we just checked the version
-    assert res['cached'] is True
-
-    # illegal queries should fail
-    res = add_project(test_project, __version__, status='wtf')
-    assert res['success'] is False
-    assert res['latest_version'] is None
-
-
-def test_check_project(setup_migas):
-    res = check_project(test_project, __version__)
+def test_check_project():
+    res = check_project(test_project, migas.__version__)
     assert res['success'] is True
     assert res['latest']
-    v = LooseVersion(__version__)
+    v = LooseVersion(migas.__version__)
     latest = LooseVersion(res['latest'])
     assert v >= latest
     assert res['flagged'] is False

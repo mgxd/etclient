@@ -76,28 +76,34 @@ class AddBreadcrumb(Operation):
 
 
 @telemetry_enabled
-def add_breadcrumb(project: str, project_version: str, **kwargs) -> dict:
+def add_breadcrumb(project: str, project_version: str, wait: bool = False, **kwargs) -> dict | None:
     """
     Send a breadcrumb with usage information to the telemetry server.
 
-    - `project` - application name
-    - `project_version` - application version
-
-    Optional keyword arguments
-    - `language` (auto-detected)
-    - `language_version` (auto-detected)
-    - process-specific
-        - `status`
-        - `status_desc`
-        - `error_type`
-        - `error_desc`
-    - context-specific
-        - `user_id` (auto-generated)
-        - `session_id`
-        - `user_type`
-        - `platform` (auto-detected)
-        - `container` (auto-detected)
-        - `is_ci` (auto-detected)
+    Parameters
+    ----------
+    project : str
+        Project name, formatted in GitHub `<owner>/<repo>` convention
+    project_version : str
+        Version string
+    wait : bool, default=False
+        If enable, wait for server response.
+    **kwargs
+        Additional usage information to send. Includes:
+        - `language` (auto-detected)
+        - `language_version` (auto-detected)
+        - process-specific
+            - `status`
+            - `status_desc`
+            - `error_type`
+            - `error_desc`
+        - context-specific
+            - `user_id` (auto-generated)
+            - `session_id`
+            - `user_type`
+            - `platform` (auto-detected)
+            - `container` (auto-detected)
+            - `is_ci` (auto-detected)
 
     Returns
     -------
@@ -108,9 +114,11 @@ def add_breadcrumb(project: str, project_version: str, **kwargs) -> dict:
         project=project, project_version=project_version, **kwargs
     )
     logger.debug(query)
-    _, response = request(Config.endpoint, query=query)
-    res = _filter_response(response, AddBreadcrumb.operation_name, AddBreadcrumb.error_response)
-    return res
+    res = request(Config.endpoint, query=query, wait=wait)
+    if wait:
+        logger.debug(res)
+        res = _filter_response(res[1], AddBreadcrumb.operation_name, AddBreadcrumb.error_response)
+        return res
 
 
 class AddProject(Operation):
@@ -169,7 +177,8 @@ def add_project(project: str, project_version: str, **kwargs) -> dict:
     )
     query = AddProject.generate_query(project=project, project_version=project_version, **kwargs)
     logger.debug(query)
-    _, response = request(Config.endpoint, query=query)
+    _, response = request(Config.endpoint, query=query, wait=True)
+    logger.debug(response)
     res = _filter_response(response, AddProject.operation_name, AddProject.error_response)
     return res
 
@@ -211,7 +220,8 @@ def check_project(project: str, project_version: str, **kwargs) -> dict:
     """
     query = CheckProject.generate_query(project=project, project_version=project_version, **kwargs)
     logger.debug(query)
-    _, response = request(Config.endpoint, query=query)
+    _, response = request(Config.endpoint, query=query, wait=True)
+    logger.debug(response)
     res = _filter_response(response, CheckProject.operation_name)
     return res
 
@@ -229,9 +239,29 @@ class GetUsage(Operation):
 
 @telemetry_enabled
 def get_usage(project: str, start: str, **kwargs) -> dict:
+    """Retrieve usage statistics from the migas server.
+
+    Parameters
+    ----------
+    project : str
+        Project name, formatted in GitHub `<owner>/<repo>` convention
+    start : str
+        Start of data collection. Supports the following formats:
+        `YYYY-MM-DD`
+        `YYYY-MM-DDTHH:MM:SSZ'
+    kwargs
+        Additional arguments for the query
+        end: End range of data collection. Same formats as `start`.
+        unique: Filter out hits from same user_id.
+
+    Returns
+        response : dict
+            success, hits, unique, message
+    """
     query = GetUsage.generate_query(project=project, start=start, **kwargs)
     logger.debug(query)
-    _, response = request(Config.endpoint, query=query)
+    _, response = request(Config.endpoint, query=query, wait=True)
+    logger.debug(response)
     res = _filter_response(response, GetUsage.operation_name)
     return res
 

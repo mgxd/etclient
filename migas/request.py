@@ -1,13 +1,15 @@
 """Stripped down, minimal import way to communicate with server"""
+from __future__ import annotations
 
 import json
 import os
+import warnings
 from typing import Optional, Tuple, Union
 from http.client import HTTPConnection, HTTPResponse, HTTPSConnection
 from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
 
 from . import __version__
-from .config import logger
 
 ETResponse = Tuple[int, Union[dict, str]]  # status code, body
 
@@ -20,6 +22,29 @@ UNAVAIL_RESPONSE = (503, {"data": None, "errors": [{"message": "Could not connec
 
 
 def request(
+    url: str,
+    *,
+    query: str = None,
+    timeout: float = None,
+    method: str = "POST",
+    chunk_size: int | None = None,
+    wait: bool = False,
+) -> None:
+    """
+    Send a non-blocking call to the server.
+
+    This will never check the future, and no assumptions can be made about server receptivity.
+    """
+    with ThreadPoolExecutor() as executor:
+        future = executor.submit(
+            _request, url, query=query, timeout=timeout, method=method, chunk_size=chunk_size,
+        )
+
+        if wait is True:
+            return future.result()
+
+
+def _request(
     url: str,
     *,
     query: str = None,
@@ -73,11 +98,15 @@ def request(
     finally:
         conn.close()
 
-    if body and response.headers.get("content-type").startswith("application/json"):
+    if body and response.headers.get("content-type", "").startswith("application/json"):
         body = json.loads(body)
 
     if not response.headers.get("X-Backend-Server"):
-        logger.warning("migas server is incorrectly configured.")
+        warnings.warn(
+            "migas server is incorrectly configured.",
+            UserWarning,
+            stacklevel=1,
+        )
     return response.status, body
 
 
